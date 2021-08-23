@@ -1,92 +1,77 @@
 var express = require('express');
 var router = express.Router();
 
-/* GET users listing. */
+// Firebase Setup
+const admin = require('firebase-admin')
+const serviceAccount = require('../ServiceAccountKey.json')
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: 'https://abccreditunionbot-9ulv.firebaseio.com'
+})
+const db = admin.firestore()
+
+// Import Functions
+const aniFunctions = require('../functions/aniFunctions')
+const pinAuthFunctions = require('../functions/pinAuthFunctions')
+const authQuestionFunctions = require('../functions/authQuestionFunctions')
+
+// Dialoflow functions
 router.post('/', function(req, res, next) {
   console.log(req.body)
+  // console.log(req)
+
   const conv = {
     "responseId" : req.body.responseId,
     "projectId": req.body.session.split('/').pop(), 
-    "sessionId": req.body.session.split('/')[1]
+    "sessionId": req.body.session.split('/')[1],
+    "queryResult": req.body.queryResult,
+    "queryResultParameters": req.body.queryResult.parameters,
+    "outputContexts": req.body.queryResult.outputContexts
+    // "telephony": req.body.originalDetectIntentRequest.payload
+  }
+  const givenIntent = req.body.queryResult.intent.displayName
+
+  switch(givenIntent) {
+    case 'Default Welcome Intent':
+      tCFunction(aniFunctions.welcomeMessage(res,conv))
+      break
+    case 'Get Current Number':
+      tCFunction(aniFunctions.retrievePhoneNumber(res,conv))
+      break
+    case 'updateNumber':
+      tCFunction(aniFunctions.searchForUser(res, conv))
+      break
+    case 'updateNumber - yes':
+      tCFunction(aniFunctions.updatePhoneNumber(res, conv))
+      break
+    case 'updateNumber - no':
+      tCFunction(res.send(aniFunctions.notUpdatingPhoneNumber(res,conv)))
+      break
+    case 'verify-pin':
+      tCFunction(pinAuthFunctions.verifyPin(res, conv))
+      break
+    case 'First Authentication Question':
+      // tCFunction(authQuestionFunctions.checkFirstAnswer(res, conv))
+      console.log('Case: ', givenIntent)
+    try {
+      authQuestionFunctions.checkFirstAnswer(res, conv)
+    } catch (error) {
+      console.log('Error in ', givenIntent, ' Intent: ', error)
+    }
+      break
+    case 'Second Authentication Question':
+      tCFunction(authQuestionFunctions.checkSecondAnswer(res, conv))
+      break
   }
 
-  switch(req.body.queryResult.intent.displayName) {
-    case 'Default Welcome Intent':
-      // res.send(createTextResponse("connected to functions in local node"))
-      try {
-        res.send(retreivePhoneNumber(conv))
-      } catch (error) {
-        console.log('Error in Default Welcome Intent', err)
-      }
+  function tCFunction(runFunction) {
+    console.log('Case: ', givenIntent)
+    try {
+      runFunction
+    } catch (error) {
+      console.log('Error in ', givenIntent, ' Intent: ', error)
+    }
   }
 });
-
-function retreivePhoneNumber(conv) {
-  const {projectId, sessionId} = conv
-  const fulfillmentMessagesArray = [
-    {
-      "text": {
-        "text": [
-          "Welcome to ABC Credit Union!"
-        ]
-      }
-    },
-    {
-      "text": {
-        "text": [
-          "Please enter the phone number registered with your account, you can enter it either in the keypad or say it out loud"
-        ]
-      }
-    }
-  ]
-
-  const resJSON = {
-    "fulfillmentMessages": fulfillmentMessagesArray,
-    "outputContexts": [
-      {
-        "name": `projects/${projectId}/agent/sessions/${sessionId}/contexts/getNewPhoneNumber`,
-        "lifespanCount": 5,
-        "parameters": {
-          'oldNumber': '1234567890'
-        }
-      }
-    ]
-  }
-
-  return resJSON
-}
-
-
-function createTextResponse(textResponse){
-  let response = {
-    "fulfillmentMessages": [
-      {
-        "text": {
-          "text": [
-            textResponse
-          ]
-        }
-      }
-    ]
-  }
-  return response
-}
-
-function createContext(projectId, sessionId, contextName, lifespan, parameters) {
-  // format for parameters
-  // "parameters": {
-  //   "param-name": "param-value"
-  // }
-  let response = {
-    "outputContexts": [
-      {
-        "name": `projects/${projectId}/agent/sessions/${sessionId}/contexts/${contextName}`,
-        "lifespanCount": lifespan,
-        "parameters": parameters
-      }
-    ]
-  }
-  return response
-}
 
 module.exports = router;
